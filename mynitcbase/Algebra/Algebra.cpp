@@ -106,15 +106,9 @@ int Algebra::select(char srcRel[ATTR_SIZE], char targetRel[ATTR_SIZE], char attr
     AttrCacheTable::resetSearchIndex(srcRelId, attr);
 
     while (true) {
-        RecId recId = BlockAccess::linearSearch(srcRelId, attr, attrVal, op);
-
-        if(recId.block == -1 && recId.slot == -1){
-          break;
-        }
-        RecBuffer recBuff(recId.block);
-        recBuff.getRecord(record, recId.slot);
-        ret = BlockAccess::insert(openedRelId, record);
-        if(ret != SUCCESS){
+        ret = BlockAccess::search(srcRelId, record, attr, attrVal, op);
+        retVal = BlockAccess::insert(openedRelId, record);
+        if(retVal != SUCCESS){
           Schema::closeRel(targetRel);
           Schema::deleteRel(targetRel);
           return ret;
