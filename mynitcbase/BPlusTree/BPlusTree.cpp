@@ -10,7 +10,7 @@ RecId BPlusTree::bPlusSearch(int relId, char attrName[ATTR_SIZE], Attribute attr
     AttrCatEntry attrCatEntry;
     AttrCacheTable::getAttrCatEntry(relId, attrName, &attrCatEntry);
 
-    int block, index;
+    int block = -1, index = -1;
 
     if (searchIndex.block == -1 && searchIndex.index == -1) {
         // searchIndex is {-1, -1} which means that the search is starting
@@ -42,6 +42,7 @@ RecId BPlusTree::bPlusSearch(int relId, char attrName[ATTR_SIZE], Attribute attr
 
             // update block to rblock of current block and index to 0.
             block = leafHead.rblock;
+            index = 0;
             if (block == -1) {
                 // (end of linked list reached - the search is done.)
                 return RecId{-1, -1};
@@ -105,13 +106,14 @@ RecId BPlusTree::bPlusSearch(int relId, char attrName[ATTR_SIZE], Attribute attr
             */
            int intIndex = 0;
            while(intIndex < intHead.numEntries){
-               internalBlk.getEntry(&intEntry,index);
+               internalBlk.getEntry(&intEntry,intIndex);
                int cmpVal = compareAttrs(attrVal,intEntry.attrVal,attrCatEntry.attrType);
-               if(cmpVal <= 0)
+               if(cmpVal < 0)
                 break;
-               else if(cmpVal > 0){
+               else{
                    intIndex++;
                }
+           }
 
             if (intIndex != intHead.numEntries) {
                 // move to the left child of that entry
@@ -120,9 +122,7 @@ RecId BPlusTree::bPlusSearch(int relId, char attrName[ATTR_SIZE], Attribute attr
             } else {
                 // move to the right child of the last entry of the block
                 // i.e numEntries - 1 th entry of the block
-                internalBlk.getEntry(&intEntry,intHead.numEntries-1);
                 block =  intEntry.rChild;// right child of last entry
-            }
             }
         }
     }
@@ -173,7 +173,7 @@ RecId BPlusTree::bPlusSearch(int relId, char attrName[ATTR_SIZE], Attribute attr
             }
 
             // search next index.
-            ++index;
+            ++leafIndex;
         }
 
         /*only for NE operation do we have to check the entire linked list;

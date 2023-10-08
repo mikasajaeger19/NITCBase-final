@@ -350,6 +350,8 @@ int BlockAccess::search(int relId, Attribute *record, char attrName[ATTR_SIZE], 
         recId = BlockAccess::linearSearch(relId, attrName, attrVal, op);
     }
     else{
+        // printf("bPlusSearch");
+        // calculate counts here
         recId = BPlusTree::bPlusSearch(relId, attrName, attrVal, op);
     }
     
