@@ -56,6 +56,67 @@ int AttrCacheTable::getAttrCatEntry(int relId, int attrOffset, AttrCatEntry* att
   return E_ATTRNOTEXIST;
 }
 
+int AttrCacheTable::setAttrCatEntry(int relId, char attrName[ATTR_SIZE], AttrCatEntry *attrCatBuf) {
+
+  if(relId < 0 || relId >= MAX_OPEN) {
+    return E_OUTOFBOUND;
+  }
+
+  if(attrCache[relId] == nullptr) {
+    return E_RELNOTOPEN;
+  }
+
+  AttrCacheEntry* entry;
+
+  for(entry = attrCache[relId]; entry != nullptr; entry = entry->next)
+  {
+    if(!strcmp(attrName, entry->attrCatEntry.attrName))
+    {
+      // copy the attrCatBuf to the corresponding Attribute Catalog entry in
+      // the Attribute Cache Table.
+      entry->attrCatEntry = *attrCatBuf;
+      entry->dirty = true;
+      // set the dirty flag of the corresponding Attribute Cache entry in the
+      // Attribute Cache Table.
+
+      return SUCCESS;
+    }
+  }
+
+  return E_ATTRNOTEXIST;
+}
+
+int AttrCacheTable::setAttrCatEntry(int relId, int attrOffset, AttrCatEntry *attrCatBuf) {
+
+  if(relId < 0 || relId >= MAX_OPEN) {
+    return E_OUTOFBOUND;
+  }
+
+  if(attrCache[relId] == nullptr) {
+    return E_RELNOTOPEN;
+  }
+
+  AttrCacheEntry* entry;
+  
+  for(entry = attrCache[relId]; entry != nullptr; entry = entry->next)
+  {
+    if(entry->attrCatEntry.offset == attrOffset)
+    {
+      // copy the attrCatBuf to the corresponding Attribute Catalog entry in
+      // the Attribute Cache Table.
+      entry->attrCatEntry = *attrCatBuf;
+      entry->dirty = true;
+
+      // set the dirty flag of the corresponding Attribute Cache entry in the
+      // Attribute Cache Table.
+
+      return SUCCESS;
+    }
+  }
+
+  return E_ATTRNOTEXIST;
+}
+
 /* Converts a attribute catalog record to AttrCatEntry struct
     We get the record as Attribute[] from the BlockBuffer.getRecord() function.
     This function will convert that to a struct AttrCatEntry type.
@@ -71,6 +132,17 @@ void AttrCacheTable::recordToAttrCatEntry(union Attribute record[ATTRCAT_NO_ATTR
   attrCatEntry->rootBlock= (int)record[ATTRCAT_ROOT_BLOCK_INDEX].nVal;
   attrCatEntry->offset= (int)record[ATTRCAT_OFFSET_INDEX].nVal;
   // copy the rest of the fields in the record to the attrCacheEntry struct
+}
+
+void AttrCacheTable::attrCatEntryToRecord(AttrCatEntry* attrCatEntry,
+                                          union Attribute record[ATTRCAT_NO_ATTRS]) {
+  strcpy(record[ATTRCAT_REL_NAME_INDEX].sVal, attrCatEntry->relName);
+  strcpy(record[ATTRCAT_ATTR_NAME_INDEX].sVal, attrCatEntry->attrName);
+  record[ATTRCAT_ATTR_TYPE_INDEX].nVal= attrCatEntry->attrType;
+  record[ATTRCAT_PRIMARY_FLAG_INDEX].nVal= attrCatEntry->primaryFlag;
+  record[ATTRCAT_ROOT_BLOCK_INDEX].nVal= attrCatEntry->rootBlock;
+  record[ATTRCAT_OFFSET_INDEX].nVal= attrCatEntry->offset;
+  // copy the rest of the fields in the attrCacheEntry struct to the record
 }
 
 int AttrCacheTable::getSearchIndex(int relId, int offset, IndexId* searchIndex) {

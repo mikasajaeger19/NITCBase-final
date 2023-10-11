@@ -342,6 +342,15 @@ int OpenRelTable::closeRel(int relId) {
   // free the memory allocated in the attribute caches which was allocated in openRel
   AttrCacheEntry* current = AttrCacheTable::attrCache[relId];
   while(current != NULL){
+
+    if(current->dirty == true){
+      // if the attribute cache entry is dirty, write it back to the attribute catalog
+      Attribute attrCatRecord[ATTRCAT_NO_ATTRS];
+      AttrCacheTable::attrCatEntryToRecord(&current->attrCatEntry, attrCatRecord);
+      RecBuffer attrCatBlock(current->recId.block);
+      attrCatBlock.setRecord(attrCatRecord, current->recId.slot);
+    }
+    
     AttrCacheEntry* temp = current;
     current = current->next;
     free(temp);

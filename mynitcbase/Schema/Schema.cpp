@@ -133,3 +133,70 @@ int Schema::deleteRel(char *relName){
   return retVal;
 
 }
+
+int Schema::createIndex(char relName[ATTR_SIZE],char attrName[ATTR_SIZE]){
+    // if the relName is either Relation Catalog or Attribute Catalog,
+        // return E_NOTPERMITTED
+    //printf("Create Index Schema \n");
+    if(strcmp(relName,RELCAT_RELNAME) == 0 || strcmp(relName,ATTRCAT_RELNAME) == 0){
+        return E_NOTPERMITTED;
+    } 
+        // (check if the relation names are either "RELATIONCAT" and "ATTRIBUTECAT".
+        // you may use the following constants: RELCAT_NAME and ATTRCAT_NAME)
+    int relId = OpenRelTable::getRelId(relName);
+    // get the relation's rel-id using OpenRelTable::getRelId() method
+    if(relId == E_RELNOTOPEN){
+        return E_RELNOTOPEN;
+    }
+    // if relation is not open in open relation table, return E_RELNOTOPEN
+    // (check if the value returned from getRelId function call = E_RELNOTOPEN)
+    //printf("Create Index Schema \n");
+    // create a bplus tree using BPlusTree::bPlusCreate() and return the value
+    return BPlusTree::bPlusCreate(relId, attrName);
+}
+
+int Schema::dropIndex(char *relName, char *attrName) {
+    // if the relName is either Relation Catalog or Attribute Catalog,
+        // return E_NOTPERMITTED
+        // (check if the relation names are either "RELATIONCAT" and "ATTRIBUTECAT".
+        // you may use the following constants: RELCAT_NAME and ATTRCAT_NAME)
+
+    if(strcmp(relName,RELCAT_RELNAME) == 0 || strcmp(relName,ATTRCAT_RELNAME) == 0){
+        return E_NOTPERMITTED;
+    }
+
+    int relId = OpenRelTable::getRelId(relName);
+
+    if(relId == E_RELNOTOPEN){
+        return E_RELNOTOPEN;
+    }
+    // get the rel-id using OpenRelTable::getRelId()
+
+    // if relation is not open in open relation table, return E_RELNOTOPEN
+    // (check if the value returned from getRelId function call = E_RELNOTOPEN)
+
+    AttrCatEntry attrCatEntry;
+    int ret = AttrCacheTable::getAttrCatEntry(relId, attrName, &attrCatEntry);
+    // get the attribute catalog entry corresponding to the attribute
+    // using AttrCacheTable::getAttrCatEntry()
+
+    // if getAttrCatEntry() fails, return E_ATTRNOTEXIST
+    if(ret != SUCCESS){
+        return E_ATTRNOTEXIST;
+    }
+    int rootBlock = attrCatEntry.rootBlock;
+
+    if (rootBlock == -1) {
+        return E_NOINDEX;
+    }
+
+    // destroy the bplus tree rooted at rootBlock using BPlusTree::bPlusDestroy()
+    BPlusTree::bPlusDestroy(rootBlock);
+
+    attrCatEntry.rootBlock = -1;
+    AttrCacheTable::setAttrCatEntry(relId, attrName, &attrCatEntry);
+    // set rootBlock = -1 in the attribute cache entry of the attribute using
+    // AttrCacheTable::setAttrCatEntry()
+
+    return SUCCESS;
+}
