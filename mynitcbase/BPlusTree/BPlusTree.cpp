@@ -1,8 +1,22 @@
 #include "BPlusTree.h"
-#include <stdio.h>
+
 #include <cstring>
 
+inline bool operator == (RecId lhs, RecId rhs) {
+	return (lhs.block == rhs.block && lhs.slot == rhs.slot);
+}
 
+inline bool operator != (RecId lhs, RecId rhs) {
+	return (lhs.block != rhs.block || lhs.slot != rhs.slot);
+}
+
+inline bool operator == (IndexId lhs, IndexId rhs) {
+	return (lhs.block == rhs.block && lhs.index == rhs.index);
+}
+
+inline bool operator != (IndexId lhs, IndexId rhs) {
+	return (lhs.block != rhs.block || lhs.index != rhs.index);
+}
 
 RecId BPlusTree::bPlusSearch(int relId, char attrName[ATTR_SIZE], 
                                 Attribute attrVal, int op) 
@@ -22,7 +36,7 @@ RecId BPlusTree::bPlusSearch(int relId, char attrName[ATTR_SIZE],
     // declare variables block and index which will be used during search
     int block = -1, index = -1;
 
-    if (searchIndex.block == -1 && searchIndex.index == -1) // (search is done for the first time)
+    if (searchIndex == IndexId{-1, -1}) // (search is done for the first time)
     {
         // start the search from the first entry of root.
         block = attrCatEntry.rootBlock;
@@ -128,7 +142,9 @@ RecId BPlusTree::bPlusSearch(int relId, char attrName[ATTR_SIZE],
                 
                 int cmpVal = compareAttrs(intEntry.attrVal, attrVal, attrCatEntry.attrType);
                 if (
-                    (op == EQ || op == GE && cmpVal >= 0) || (op == GT && cmpVal > 0)
+                    (op == EQ && cmpVal >= 0) ||
+                    (op == GE && cmpVal >= 0) ||
+                    (op == GT && cmpVal > 0)
                 )
                     break;
 
@@ -223,175 +239,123 @@ RecId BPlusTree::bPlusSearch(int relId, char attrName[ATTR_SIZE],
     return RecId{-1, -1};
 }
 
-int BPlusTree::bPlusCreate(int relId, char attrName[ATTR_SIZE]) {
-
-    if(relId == ATTRCAT_RELID || relId == RELCAT_RELID){
+int BPlusTree::bPlusCreate(int relId, char attrName[ATTR_SIZE]) 
+{
+    // if relId is either RELCAT_RELID or ATTRCAT_RELID:
+    //     return E_NOTPERMITTED;
+    if (relId == RELCAT_RELID || relId == ATTRCAT_RELID)
         return E_NOTPERMITTED;
-    }
-
-    //printf("BPlus create starting\n");
-
-    AttrCatEntry attrCatEntry;
-    int ret = AttrCacheTable::getAttrCatEntry(relId, attrName, &attrCatEntry);
-
-    int attrOffset = attrCatEntry.offset;
 
     // get the attribute catalog entry of attribute `attrName`
     // using AttrCacheTable::getAttrCatEntry()
+    AttrCatEntry attrCatEntryBuffer;
+    int ret = AttrCacheTable::getAttrCatEntry(relId, attrName, &attrCatEntryBuffer);
 
     // if getAttrCatEntry fails
     //     return the error code from getAttrCatEntry
+    if (ret != SUCCESS) return ret;
 
-    if(ret != SUCCESS)
-        return ret;
-
-    //printf("BPlus create middle check\n");
-
-    if (attrCatEntry.rootBlock != -1) {
+    // if (/* an index already exists for the attribute (check rootBlock field) */) 
+    if (attrCatEntryBuffer.rootBlock != -1)
         return SUCCESS;
-    }
 
     /******Creating a new B+ Tree ******/
 
     // get a free leaf block using constructor 1 to allocate a new block
     IndLeaf rootBlockBuf;
+
     // (if the block could not be allocated, the appropriate error code
     //  will be stored in the blockNum member field of the object)
 
     // declare rootBlock to store the blockNumber of the new leaf block
-    int rootBlock = 0;
-    rootBlock = rootBlockBuf.getBlockNum();
-    //printf("%d \n",rootBlock);
+    int rootBlock = rootBlockBuf.getBlockNum();
+
     // if there is no more disk space for creating an index
-    if (rootBlock == E_DISKFULL) {
-        return E_DISKFULL;
-    }
+    if (rootBlock == E_DISKFULL) return E_DISKFULL;
 
-    attrCatEntry.rootBlock = rootBlock;
-    AttrCacheTable::setAttrCatEntry(relId, attrOffset, &attrCatEntry);
+    attrCatEntryBuffer.rootBlock = rootBlock;
+    AttrCacheTable::setAttrCatEntry(relId, attrName, &attrCatEntryBuffer);
 
-    //printf("BPlus create middle check 2\n");
-
-    RelCatEntry relCatEntry;
+    RelCatEntry relCatEntryBuffer;
 
     // load the relation catalog entry into relCatEntry
     // using RelCacheTable::getRelCatEntry().
-    RelCacheTable::getRelCatEntry(relId, &relCatEntry);
-    int block = relCatEntry.firstBlk;
+    RelCacheTable::getRelCatEntry(relId, &relCatEntryBuffer);
+    int block = relCatEntryBuffer.firstBlk; // first record block of the relation 
 
     /***** Traverse all the blocks in the relation and insert them one
            by one into the B+ Tree *****/
     while (block != -1) {
-
         // declare a RecBuffer object for `block` (using appropriate constructor)
-        RecBuffer recBuffer(block);
-        unsigned char slotMap[relCatEntry.numSlotsPerBlk];
-        recBuffer.getSlotMap(slotMap);
-        // load the slot map into slotMap using RecBuffer::getSlotMap().
+        RecBuffer blockBuffer (block);
 
-        // for every occupied slot of the block
-        for(int slotIndex = 0; slotIndex < relCatEntry.numSlotsPerBlk; slotIndex++)
+        // load the slot map into slotMap using RecBuffer::getSlotMap().
+        unsigned char slotmap[relCatEntryBuffer.numSlotsPerBlk];
+        blockBuffer.getSlotMap(slotmap);
+
+        for (int slot = 0; slot < relCatEntryBuffer.numSlotsPerBlk; slot++)
         {
-            if(slotMap[slotIndex] == SLOT_OCCUPIED){
-                Attribute record[relCatEntry.numAttrs];
-                recBuffer.getRecord(record,slotIndex);
-                RecId recId{block,slotIndex};
-                int retVal = bPlusInsert(relId,attrName,record[attrOffset],recId);
-     
-                if(retVal == E_DISKFULL){
+            if (slotmap[slot] == SLOT_OCCUPIED)
+            {
+                Attribute record[relCatEntryBuffer.numAttrs];
+                // load the record corresponding to the slot into `record`
+                // using RecBuffer::getRecord().
+                blockBuffer.getRecord(record, slot);
+
+                // declare recId and store the rec-id of this record in it
+                // RecId recId{block, slot};
+                RecId recId = RecId{block, slot};
+
+                // insert the attribute value corresponding to attrName from the record
+                // into the B+ tree using bPlusInsert.
+                // (note that bPlusInsert will destroy any existing bplus tree if
+                // insert fails i.e when disk is full)
+
+                ret = bPlusInsert(relId, attrName, 
+                                    record[attrCatEntryBuffer.offset], recId);
+
+                if (ret == E_DISKFULL) {
+                    // (unable to get enough blocks to build the B+ Tree.)
                     return E_DISKFULL;
                 }
             }
-            
         }
-
-        //printf("BPlus create end check\n");
-
+        
         // get the header of the block using BlockBuffer::getHeader()
-        HeadInfo headInfo;
-        recBuffer.getHeader(&headInfo);
-        block = headInfo.rblock;
+        HeadInfo blockHeader;
+        blockBuffer.getHeader(&blockHeader);
+
         // set block = rblock of current block (from the header)
+        block = blockHeader.rblock;
     }
 
     return SUCCESS;
 }
 
-int BPlusTree::bPlusDestroy(int rootBlockNum) {
-    if (rootBlockNum < 0 || rootBlockNum >= DISK_BLOCKS) {
-        return E_OUTOFBOUND;
-    }
-
-    int type = StaticBuffer::getStaticBlockType(rootBlockNum);
-
-    if (type == IND_LEAF) {
-        // declare an instance of IndLeaf for rootBlockNum using appropriate
-        // constructor
-        IndLeaf leafBlock(rootBlockNum);
-        leafBlock.releaseBlock();
-        // release the block using BlockBuffer::releaseBlock().
-
-        return SUCCESS;
-
-    } else if (type == IND_INTERNAL) {
-        // declare an instance of IndInternal for rootBlockNum using appropriate
-        // constructor
-        IndInternal internalBlk(rootBlockNum);
-        // load the header of the block using BlockBuffer::getHeader().
-        struct HeadInfo headInfo;
-        internalBlk.getHeader(&headInfo);
-        for(int entryIndex = 0; entryIndex < headInfo.numEntries; entryIndex++){
-            InternalEntry internalEntry;
-            internalBlk.getEntry(&internalEntry,entryIndex);
-            if(entryIndex == 0)
-                BPlusTree::bPlusDestroy(internalEntry.lChild);
-            BPlusTree::bPlusDestroy(internalEntry.rChild);
-        }
-        /*iterate through all the entries of the internalBlk and destroy the lChild
-        of the first entry and rChild of all entries using BPlusTree::bPlusDestroy().
-        (the rchild of an entry is the same as the lchild of the next entry.
-         take care not to delete overlapping children more than once ) */
-
-        // release the block using BlockBuffer::releaseBlock().
-        internalBlk.releaseBlock();
-
-        return SUCCESS;
-
-    } else {
-        // (block is not an index block.)
-        return E_INVALIDBLOCK;
-    }
-}
-
-
-int BPlusTree::bPlusInsert(int relId, char attrName[ATTR_SIZE], Attribute attrVal, RecId recId) {
+int BPlusTree::bPlusInsert(int relId, char attrName[ATTR_SIZE], 
+                            Attribute attrVal, RecId recId) {
     // get the attribute cache entry corresponding to attrName
     // using AttrCacheTable::getAttrCatEntry().
-    AttrCatEntry attrCatEntry;
-    int ret = AttrCacheTable::getAttrCatEntry(relId, attrName, &attrCatEntry);
+    AttrCatEntry attrCatEntryBuffer;
+    int ret = AttrCacheTable::getAttrCatEntry(relId, attrName, &attrCatEntryBuffer);
 
     // if getAttrCatEntry() failed
     //     return the error code
+    if (ret != SUCCESS) return ret;
 
-    if(ret !=  SUCCESS)
-        return ret;
+    int rootBlock = attrCatEntryBuffer.rootBlock; // rootBlock of B+ Tree 
 
-    int blockNum = attrCatEntry.rootBlock;
-
-    if (blockNum == -1) {
-        return E_NOINDEX;
-    }
-
+    // if (/* there is no index on attribute (rootBlock is -1) */) 
+    if (rootBlock == -1) return E_NOINDEX;
 
     // find the leaf block to which insertion is to be done using the
     // findLeafToInsert() function
 
-    int leafBlkNum = findLeafToInsert(blockNum, attrVal, attrCatEntry.attrType);
-    /* findLeafToInsert(root block num, attrVal, attribute type) */;
-
+    int leafBlkNum = findLeafToInsert(rootBlock, attrVal, attrCatEntryBuffer.attrType); // findLeafToInsert(root block num, attrVal, attribute type) 
 
     // insert the attrVal and recId to the leaf block at blockNum using the
     // insertIntoLeaf() function.
+
     // declare a struct Index with attrVal = attrVal, block = recId.block and
     // slot = recId.slot to pass as argument to the function.
     // insertIntoLeaf(relId, attrName, leafBlkNum, Index entry)
@@ -399,21 +363,19 @@ int BPlusTree::bPlusInsert(int relId, char attrName[ATTR_SIZE], Attribute attrVa
     //       required internal nodes by calling the required helper functions
     //       like insertIntoInternal() or createNewRoot()
 
-    struct Index entry;
-    entry.attrVal = attrVal;
-    entry.block = recId.block;
-    entry.slot = recId.slot;
+    Index indexEntry; 
+    indexEntry.attrVal = attrVal, indexEntry.block = recId.block, indexEntry.slot = recId.slot;
     
-    ret = insertIntoLeaf(relId, attrName, leafBlkNum, entry);
-
-    if (ret == E_DISKFULL) {
-
-        bPlusDestroy(blockNum);
+    // if (/*insertIntoLeaf() returns E_DISKFULL */) 
+    if (insertIntoLeaf(relId, attrName, leafBlkNum, indexEntry) == E_DISKFULL)
+    {
         // destroy the existing B+ tree by passing the rootBlock to bPlusDestroy().
-        attrCatEntry.rootBlock = -1;
-        AttrCacheTable::setAttrCatEntry(relId, attrName, &attrCatEntry);
+        BPlusTree::bPlusDestroy(rootBlock);
+
         // update the rootBlock of attribute catalog cache entry to -1 using
         // AttrCacheTable::setAttrCatEntry().
+        attrCatEntryBuffer.rootBlock = -1;
+        AttrCacheTable::setAttrCatEntry(relId, attrName, &attrCatEntryBuffer);
 
         return E_DISKFULL;
     }
@@ -472,7 +434,6 @@ int BPlusTree::findLeafToInsert(int rootBlock, Attribute attrVal, int attrType) 
 
     return blockNum;
 }
-
 
 int BPlusTree::insertIntoLeaf(int relId, char attrName[ATTR_SIZE], int leafBlockNum, Index indexEntry) 
 {
@@ -601,64 +562,66 @@ int BPlusTree::insertIntoLeaf(int relId, char attrName[ATTR_SIZE], int leafBlock
     return SUCCESS;
 }
 
-
 int BPlusTree::splitLeaf(int leafBlockNum, Index indices[]) {
     // declare rightBlk, an instance of IndLeaf using constructor 1 to obtain new
     // leaf index block that will be used as the right block in the splitting
-    
-    IndLeaf rightBlk;
-    //check
-
+    IndLeaf rightBlock;
 
     // declare leftBlk, an instance of IndLeaf using constructor 2 to read from
     // the existing leaf block
-    IndLeaf leftBlk(leafBlockNum);
-    int rightBlkNum = rightBlk.getBlockNum();
-    int leftBlkNum = leftBlk.getBlockNum();
+    IndLeaf leftBlock(leafBlockNum);
 
-    if (rightBlkNum == E_DISKFULL) {
+    int rightBlockNum = rightBlock.getBlockNum();
+    int leftBlockNum = leftBlock.getBlockNum();
+
+    if (rightBlockNum == E_DISKFULL) 
+    {
+        //(failed to obtain a new leaf index block because the disk is full)
         return E_DISKFULL;
     }
 
-    HeadInfo leftBlkHeader, rightBlkHeader;
     // get the headers of left block and right block using BlockBuffer::getHeader()
-    leftBlk.getHeader(&leftBlkHeader);
-    rightBlk.getHeader(&rightBlkHeader);
+    HeadInfo leftBlockHeader, rightBlockHeader;
+    leftBlock.getHeader(&leftBlockHeader);
+    rightBlock.getHeader(&rightBlockHeader);
 
-    rightBlkHeader.blockType = leftBlkHeader.blockType;
-    rightBlkHeader.numEntries = (MAX_KEYS_LEAF + 1) / 2;
-    rightBlkHeader.pblock = leftBlkHeader.pblock;
-    rightBlkHeader.lblock = leftBlkNum;
-    rightBlkHeader.rblock = leftBlkHeader.rblock;
-
-    rightBlk.setHeader(&rightBlkHeader);
     // set rightBlkHeader with the following values
     // - number of entries = (MAX_KEYS_LEAF+1)/2 = 32,
     // - pblock = pblock of leftBlk
     // - lblock = leftBlkNum
     // - rblock = rblock of leftBlk
     // and update the header of rightBlk using BlockBuffer::setHeader()
+    
+    rightBlockHeader.blockType = leftBlockHeader.blockType, 
+    rightBlockHeader.numEntries = (MAX_KEYS_LEAF+1)/2;
+    
+    rightBlockHeader.pblock = leftBlockHeader.pblock, 
+    rightBlockHeader.lblock = leftBlockNum, 
+    rightBlockHeader.rblock = leftBlockHeader.rblock;
 
-    leftBlkHeader.numEntries = (MAX_KEYS_LEAF + 1)/2;
-    leftBlkHeader.rblock = rightBlkNum;
-    leftBlk.setHeader(&leftBlkHeader);    
+    rightBlock.setHeader(&rightBlockHeader);
+
     // set leftBlkHeader with the following values
     // - number of entries = (MAX_KEYS_LEAF+1)/2 = 32
     // - rblock = rightBlkNum
     // and update the header of leftBlk using BlockBuffer::setHeader() */
 
-    for(int entryIndex = 0; entryIndex < leftBlkHeader.numEntries; entryIndex++){
-        leftBlk.setEntry(&indices[entryIndex],entryIndex);
-    }
+    leftBlockHeader.numEntries = (MAX_KEYS_LEAF+1)/2;
+    leftBlockHeader.rblock = rightBlockNum;
 
-    for(int entryIndex = 0; entryIndex < rightBlkHeader.numEntries; entryIndex++){
-        rightBlk.setEntry(&indices[entryIndex + leftBlkHeader.numEntries],entryIndex);
-    }
+    leftBlock.setHeader(&leftBlockHeader);
+
     // set the first 32 entries of leftBlk = the first 32 entries of indices array
     // and set the first 32 entries of newRightBlk = the next 32 entries of
     // indices array using IndLeaf::setEntry().
 
-    return rightBlkNum;
+    for (int entryindex = 0; entryindex <= MIDDLE_INDEX_LEAF; entryindex++)
+    {
+        leftBlock.setEntry(&indices[entryindex], entryindex);
+        rightBlock.setEntry(&indices[entryindex + MIDDLE_INDEX_LEAF+1], entryindex);
+    }
+
+    return rightBlockNum;
 }
 
 int BPlusTree::insertIntoInternal(int relId, char attrName[ATTR_SIZE], 
@@ -832,48 +795,51 @@ int BPlusTree::insertIntoInternal(int relId, char attrName[ATTR_SIZE],
     return SUCCESS;
 }
 
-
-int BPlusTree::splitInternal(int intBlockNum, InternalEntry internalEntries[]) {
+int BPlusTree::splitInternal(int intBlockNum, InternalEntry internalEntries[]) 
+{
     // declare rightBlk, an instance of IndInternal using constructor 1 to obtain new
     // internal index block that will be used as the right block in the splitting
+    IndInternal rightBlock;
 
-    IndInternal rightBlk;
     // declare leftBlk, an instance of IndInternal using constructor 2 to read from
     // the existing internal index block
+    IndInternal leftBlock (intBlockNum);
 
-    IndInternal leftBlk(intBlockNum);
+    int leftBlockNum = leftBlock.getBlockNum();
+    int rightBlockNum = rightBlock.getBlockNum();
 
-    int rightBlkNum = rightBlk.getBlockNum();
-    int leftBlkNum = leftBlk.getBlockNum();
-
-    if (rightBlkNum == E_DISKFULL) {
+    // if newly allocated block has blockNum E_DISKFULL 
+    if (rightBlockNum == E_DISKFULL)
+    {
         //(failed to obtain a new internal index block because the disk is full)
         return E_DISKFULL;
     }
 
-    HeadInfo leftBlkHeader, rightBlkHeader;
-    // get the headers of left block and right block using BlockBuffer::getHeader();
+    HeadInfo leftBlockHeader, rightBlockHeader;
 
-    leftBlk.getHeader(&leftBlkHeader);
-    rightBlk.getHeader(&rightBlkHeader);
-
-    rightBlkHeader.numEntries = (MAX_KEYS_INTERNAL) / 2;
-    rightBlkHeader.pblock = leftBlkHeader.pblock;
-    rightBlk.setHeader(&rightBlkHeader);
-
-    leftBlkHeader.numEntries = (MAX_KEYS_INTERNAL) / 2;
-    leftBlkHeader.rblock = rightBlkNum;
-    leftBlk.setHeader(&leftBlkHeader);
+    // get the headers of left block and right block using BlockBuffer::getHeader()
+    leftBlock.getHeader(&leftBlockHeader);
+    rightBlock.getHeader(&rightBlockHeader);
 
     // set rightBlkHeader with the following values
     // - number of entries = (MAX_KEYS_INTERNAL)/2 = 50
     // - pblock = pblock of leftBlk
     // and update the header of rightBlk using BlockBuffer::setHeader()
+    
+    rightBlockHeader.numEntries = MAX_KEYS_INTERNAL / 2;
+    rightBlockHeader.pblock = leftBlockHeader.pblock;
+
+    rightBlock.setHeader(&rightBlockHeader);
 
     // set leftBlkHeader with the following values
     // - number of entries = (MAX_KEYS_INTERNAL)/2 = 50
     // - rblock = rightBlkNum
     // and update the header using BlockBuffer::setHeader()
+
+    leftBlockHeader.numEntries = MAX_KEYS_INTERNAL / 2;
+    leftBlockHeader.rblock = rightBlockNum;
+
+    leftBlock.setHeader(&leftBlockHeader);
 
     /*
     - set the first 50 entries of leftBlk = index 0 to 49 of internalEntries
@@ -883,127 +849,156 @@ int BPlusTree::splitInternal(int intBlockNum, InternalEntry internalEntries[]) {
       (index 50 will be moving to the parent internal index block)
     */
 
-    for(int entryIndex = 0; entryIndex < leftBlkHeader.numEntries; entryIndex++){
-        leftBlk.setEntry(&internalEntries[entryIndex],entryIndex);
+    for (int entryindex = 0; entryindex < MIDDLE_INDEX_INTERNAL; entryindex++)
+    {
+        leftBlock.setEntry(&internalEntries[entryindex], entryindex);
+        rightBlock.setEntry(&internalEntries[entryindex + MIDDLE_INDEX_INTERNAL + 1], entryindex);
     }
 
-    for(int entryIndex = 0; entryIndex < rightBlkHeader.numEntries; entryIndex++){
-        rightBlk.setEntry(&internalEntries[entryIndex + rightBlkHeader.numEntries + 1],entryIndex);
-    }
-
-    int type = StaticBuffer::getStaticBlockType(internalEntries[0].lChild);/* block type of a child of any entry of the internalEntries array */;
+    /* block type of a child of any entry of the internalEntries array */;
     //            (use StaticBuffer::getStaticBlockType())
+    int type = StaticBuffer::getStaticBlockType(internalEntries[0].lChild);
 
-    for (int entryIndex = 0; entryIndex < rightBlkHeader.numEntries; ++entryIndex) {
+    // for (/* each child block of the new right block */) 
+    BlockBuffer blockbuffer (internalEntries[MIDDLE_INDEX_INTERNAL+1].lChild);
+
+    HeadInfo blockHeader;
+    blockbuffer.getHeader(&blockHeader);
+
+    blockHeader.pblock = rightBlockNum;
+    blockbuffer.setHeader(&blockHeader);
+
+    for (int entryindex = 0; entryindex < MIDDLE_INDEX_INTERNAL; entryindex++)
+    {
         // declare an instance of BlockBuffer to access the child block using
         // constructor 2
-        BlockBuffer childBlockLeft(internalEntries[entryIndex + rightBlkHeader.numEntries].lChild);
-        BlockBuffer childBlockRight(internalEntries[entryIndex + rightBlkHeader.numEntries].rChild);
-        
-        HeadInfo leftChildHeader, rightChildHeader;
-        
-        childBlockLeft.getHeader(&leftChildHeader);
-        childBlockRight.getHeader(&rightChildHeader);
-
-        leftChildHeader.pblock = rightBlkNum;
-        rightChildHeader.pblock = rightBlkNum;
-
-        childBlockLeft.setHeader(&leftChildHeader);
-        childBlockRight.setHeader(&rightChildHeader);
+        BlockBuffer blockbuffer (internalEntries[entryindex + MIDDLE_INDEX_INTERNAL+1].rChild);
 
         // update pblock of the block to rightBlkNum using BlockBuffer::getHeader()
         // and BlockBuffer::setHeader().
+        // HeadInfo blockHeader;
+        blockbuffer.getHeader(&blockHeader);
+
+        blockHeader.pblock = rightBlockNum;
+        blockbuffer.setHeader(&blockHeader);
     }
 
-    return rightBlkNum;
+    return rightBlockNum; 
 }
 
 int BPlusTree::createNewRoot(int relId, char attrName[ATTR_SIZE], Attribute attrVal, int lChild, int rChild) {
     // get the attribute cache entry corresponding to attrName
     // using AttrCacheTable::getAttrCatEntry().
-
-    AttrCatEntry attrCatEntry;
-    AttrCacheTable::getAttrCatEntry(relId, attrName, &attrCatEntry);
+    AttrCatEntry attrCatEntryBuffer;
+    AttrCacheTable::getAttrCatEntry(relId, attrName, &attrCatEntryBuffer);
 
     // declare newRootBlk, an instance of IndInternal using appropriate constructor
     // to allocate a new internal index block on the disk
+    IndInternal newRootBlock;
 
-    IndInternal newRootBlk;
+    int newRootBlkNum = newRootBlock.getBlockNum();
 
-    int newRootBlkNum = newRootBlk.getBlockNum();
-
-    if (newRootBlkNum == E_DISKFULL) {
+    if (newRootBlkNum == E_DISKFULL) 
+    {
         // (failed to obtain an empty internal index block because the disk is full)
-        bPlusDestroy(rChild);
+
         // Using bPlusDestroy(), destroy the right subtree, rooted at rChild.
         // This corresponds to the tree built up till now that has not yet been
         // connected to the existing B+ Tree
+
+        BPlusTree::bPlusDestroy(rChild);
 
         return E_DISKFULL;
     }
 
     // update the header of the new block with numEntries = 1 using
     // BlockBuffer::getHeader() and BlockBuffer::setHeader()
-    HeadInfo newRootBlkHeader;
-    newRootBlk.getHeader(&newRootBlkHeader);
-    newRootBlkHeader.numEntries = 1;
-    newRootBlk.setHeader(&newRootBlkHeader);
+    HeadInfo blockHeader;
+    newRootBlock.getHeader(&blockHeader);
+
+    blockHeader.numEntries = 1;
+    newRootBlock.setHeader(&blockHeader);
 
     // create a struct InternalEntry with lChild, attrVal and rChild from the
     // arguments and set it as the first entry in newRootBlk using IndInternal::setEntry()
+    InternalEntry internalentry;
+    internalentry.lChild = lChild, internalentry.rChild = rChild, internalentry.attrVal = attrVal;
 
-    InternalEntry internalEntry;
-    internalEntry.lChild = lChild;
-    internalEntry.attrVal = attrVal;
-    internalEntry.rChild = rChild;
-    newRootBlk.setEntry(&internalEntry,0);
+    newRootBlock.setEntry(&internalentry, 0);
 
     // declare BlockBuffer instances for the `lChild` and `rChild` blocks using
     // appropriate constructor and update the pblock of those blocks to `newRootBlkNum`
     // using BlockBuffer::getHeader() and BlockBuffer::setHeader()
+    BlockBuffer leftChildBlock (lChild);
+    BlockBuffer rightChildBlock (rChild);
 
-    BlockBuffer lChildBlock(lChild);
-    BlockBuffer rChildBlock(rChild);
+    HeadInfo leftChildHeader, rightChildHeader;
+    leftChildBlock.getHeader(&leftChildHeader);
+    rightChildBlock.getHeader(&rightChildHeader);
 
-    HeadInfo lChildHeader, rChildHeader;
+    leftChildHeader.pblock = newRootBlkNum;
+    rightChildHeader.pblock = newRootBlkNum;
 
-    lChildBlock.getHeader(&lChildHeader);
-    rChildBlock.getHeader(&rChildHeader);
-
-    lChildHeader.pblock = newRootBlkNum;
-    rChildHeader.pblock = newRootBlkNum;
-
-    lChildBlock.setHeader(&lChildHeader);
-    rChildBlock.setHeader(&rChildHeader);
+    leftChildBlock.setHeader(&leftChildHeader);
+    rightChildBlock.setHeader(&rightChildHeader);
 
     // update rootBlock = newRootBlkNum for the entry corresponding to `attrName`
     // in the attribute cache using AttrCacheTable::setAttrCatEntry().
-    attrCatEntry.rootBlock = newRootBlkNum;
-    AttrCacheTable::setAttrCatEntry(relId, attrName, &attrCatEntry);
+    attrCatEntryBuffer.rootBlock = newRootBlkNum;
+    AttrCacheTable::setAttrCatEntry(relId, attrName,  &attrCatEntryBuffer);
 
     return SUCCESS;
 }
 
+int BPlusTree::bPlusDestroy(int rootBlockNum) {
+    // if (/*rootBlockNum lies outside the valid range [0,DISK_BLOCKS-1]*/) 
+    if (rootBlockNum < 0 || rootBlockNum >= DISK_BLOCKS)
+        return E_OUTOFBOUND;
 
+    int type = StaticBuffer::getStaticBlockType(rootBlockNum); // type of block using StaticBuffer::getStaticBlockType() 
 
+    if (type == IND_LEAF) 
+    {
+        // declare an instance of IndLeaf for rootBlockNum using appropriate constructor
+        IndLeaf leafBlock (rootBlockNum);
 
+        // release the block using BlockBuffer::releaseBlock().
+        leafBlock.releaseBlock();
 
+        return SUCCESS;
 
+    } 
+    else if (type == IND_INTERNAL) 
+    {
+        // declare an instance of IndInternal for rootBlockNum using appropriate constructor
+        IndInternal internalBlock (rootBlockNum);
 
+        // load the header of the block using BlockBuffer::getHeader().
+        HeadInfo blockHeader;
+        internalBlock.getHeader(&blockHeader);
 
+        /*iterate through all the entries of the internalBlk and destroy the lChild
+        of the first entry and rChild of all entries using BPlusTree::bPlusDestroy().
+        (the rchild of an entry is the same as the lchild of the next entry.
+         take care not to delete overlapping children more than once ) */
+        
+        InternalEntry blockEntry;
+        internalBlock.getEntry (&blockEntry, 0);
 
+        BPlusTree::bPlusDestroy(blockEntry.lChild);
 
+        for (int entry = 0; entry < blockHeader.numEntries; entry++) {
+            internalBlock.getEntry (&blockEntry, entry);
+            BPlusTree::bPlusDestroy(blockEntry.rChild);
+        }
 
+        // release the block using BlockBuffer::releaseBlock().
+        internalBlock.releaseBlock();
 
+        return SUCCESS;
 
-
-
-
-
-
-
-
-
-
-
+    } 
+    else // (block is not an index block.)
+        return E_INVALIDBLOCK;
+}
 

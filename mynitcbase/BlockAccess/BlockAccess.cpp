@@ -2,33 +2,33 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <cstring>
-int compareAttrs(union Attribute attr1, union Attribute attr2, int attrType) {
+// int compareAttrs(union Attribute attr1, union Attribute attr2, int attrType) {
 
-    double diff;
-    if(attrType == STRING){
-    	//printf("attr1 %s attr2 %s\n", attr1.sVal, attr2.sVal);
-        diff = strcmp(attr1.sVal, attr2.sVal);
-    }
-    // if attrType == STRING
-    //     diff = strcmp(attr1.sval, attr2.sval)
-    else
-    	diff = attr1.nVal - attr2.nVal;
-    // else
-    //     diff = attr1.nval - attr2.nval
+//     double diff;
+//     if(attrType == STRING){
+//     	//printf("attr1 %s attr2 %s\n", attr1.sVal, attr2.sVal);
+//         diff = strcmp(attr1.sVal, attr2.sVal);
+//     }
+//     // if attrType == STRING
+//     //     diff = strcmp(attr1.sval, attr2.sval)
+//     else
+//     	diff = attr1.nVal - attr2.nVal;
+//     // else
+//     //     diff = attr1.nval - attr2.nval
 
-    if(diff > 0)
-    	return 1;
-    else
-    if(diff < 0)
-    	return -1;
-    else
-    	return 0;
-    /*
-    if diff > 0 then return 1
-    if diff < 0 then return -1
-    if diff = 0 then return 0
-    */
-}
+//     if(diff > 0)
+//     	return 1;
+//     else
+//     if(diff < 0)
+//     	return -1;
+//     else
+//     	return 0;
+//     /*
+//     if diff > 0 then return 1
+//     if diff < 0 then return -1
+//     if diff = 0 then return 0
+//     */
+// }
 
 RecId BlockAccess::linearSearch(int relId, char attrName[ATTR_SIZE], union Attribute attrVal, int op) {
     RecId prevRecId;

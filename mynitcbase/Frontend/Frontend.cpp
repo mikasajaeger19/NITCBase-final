@@ -96,7 +96,7 @@ int Frontend::select_attrlist_from_table_where(
       return ret;
 
     int relId = OpenRelTable::openRel(temp);
-    if(relId != SUCCESS)
+    if(relId < 0 || relId >= MAX_OPEN)
     {
       Schema::deleteRel(temp);
       return relId;
@@ -113,7 +113,7 @@ int Frontend::select_from_join_where(char relname_source_one[ATTR_SIZE], char re
                                      char relname_target[ATTR_SIZE],
                                      char join_attr_one[ATTR_SIZE], char join_attr_two[ATTR_SIZE]) {
   // Algebra::join
-  return SUCCESS;
+  return Algebra::join(relname_source_one, relname_source_two, relname_target, join_attr_one, join_attr_two);
 }
 
 int Frontend::select_attrlist_from_join_where(char relname_source_one[ATTR_SIZE], char relname_source_two[ATTR_SIZE],
@@ -121,9 +121,27 @@ int Frontend::select_attrlist_from_join_where(char relname_source_one[ATTR_SIZE]
                                               char join_attr_one[ATTR_SIZE], char join_attr_two[ATTR_SIZE],
                                               int attr_count, char attr_list[][ATTR_SIZE]) {
   // Algebra::join + project
+  int ret = Algebra::join(relname_source_one, relname_source_two, "TEMP", join_attr_one, join_attr_two);
+
+  if(ret != SUCCESS)
+    return ret;
+  
+  int ret1, ret2, ret3;
+  ret1 = Algebra::project("TEMP", relname_target, attr_count, attr_list);
+
+  int tempRelId = OpenRelTable::getRelId("TEMP");
+  ret2 = OpenRelTable::closeRel(tempRelId);
+  ret3 = Schema::deleteRel("TEMP");
+
+  if(ret1 != SUCCESS)
+    return ret1;
+  else if(ret2 != SUCCESS)
+    return ret2;
+  else if(ret3 != SUCCESS)
+    return ret3;
+
   return SUCCESS;
 }
-
 int Frontend::custom_function(int argc, char argv[][ATTR_SIZE]) {
   // argc gives the size of the argv array
   // argv stores every token delimited by space and comma
