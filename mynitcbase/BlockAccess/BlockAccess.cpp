@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <cstring>
+#include <iostream>
+using namespace std;
 // int compareAttrs(union Attribute attr1, union Attribute attr2, int attrType) {
 
 //     double diff;
@@ -244,6 +246,7 @@ int BlockAccess::insert(int relId, Attribute *record){
     RecBuffer recBuff(blockNum);
     HeadInfo head;
     recBuff.getHeader(&head);
+
     unsigned char* slotMap = (unsigned char*) malloc (head.numSlots*sizeof(unsigned char));
     recBuff.getSlotMap(slotMap);
 

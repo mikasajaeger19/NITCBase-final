@@ -1,22 +1,8 @@
 #include "BPlusTree.h"
-
+#include<iostream>
 #include <cstring>
 
-inline bool operator == (RecId lhs, RecId rhs) {
-	return (lhs.block == rhs.block && lhs.slot == rhs.slot);
-}
 
-inline bool operator != (RecId lhs, RecId rhs) {
-	return (lhs.block != rhs.block || lhs.slot != rhs.slot);
-}
-
-inline bool operator == (IndexId lhs, IndexId rhs) {
-	return (lhs.block == rhs.block && lhs.index == rhs.index);
-}
-
-inline bool operator != (IndexId lhs, IndexId rhs) {
-	return (lhs.block != rhs.block || lhs.index != rhs.index);
-}
 
 RecId BPlusTree::bPlusSearch(int relId, char attrName[ATTR_SIZE], 
                                 Attribute attrVal, int op) 
@@ -36,7 +22,7 @@ RecId BPlusTree::bPlusSearch(int relId, char attrName[ATTR_SIZE],
     // declare variables block and index which will be used during search
     int block = -1, index = -1;
 
-    if (searchIndex == IndexId{-1, -1}) // (search is done for the first time)
+    if (searchIndex.block == -1 && searchIndex.index == -1) // (search is done for the first time)
     {
         // start the search from the first entry of root.
         block = attrCatEntry.rootBlock;
@@ -1002,3 +988,52 @@ int BPlusTree::bPlusDestroy(int rootBlockNum) {
         return E_INVALIDBLOCK;
 }
 
+void BPlusTree::bPlusPrint(int rootBlockNum, int relId, char attrName[ATTR_SIZE]) {
+    
+    int type = StaticBuffer::getStaticBlockType(rootBlockNum); // type of block using StaticBuffer::getStaticBlockType() 
+    std::cout << "BlockNumber: " << rootBlockNum;
+    
+    AttrCatEntry AttrCatEntry;
+    AttrCacheTable::getAttrCatEntry(relId, attrName, &AttrCatEntry);
+
+    if(rootBlockNum == AttrCatEntry.rootBlock)
+        std::cout<< ", Type: Root Block"<< "\n";
+
+    else{
+        switch(type) {
+            case IND_LEAF:
+                std::cout<< ", Type: Leaf Index Block"<< "\n";
+                break;
+            case IND_INTERNAL:
+                std::cout<< ", Type: Internal Index Block"<< "\n";
+                break;
+        }
+    }
+    
+
+    if (type == IND_LEAF) 
+        return;
+
+    else if (type == IND_INTERNAL) 
+    {
+        // declare an instance of IndInternal for rootBlockNum using appropriate constructor
+        IndInternal internalBlock (rootBlockNum);
+
+        // load the header of the block using BlockBuffer::getHeader().
+        HeadInfo blockHeader;
+        internalBlock.getHeader(&blockHeader);
+
+        InternalEntry blockEntry;
+        internalBlock.getEntry (&blockEntry, 0);
+
+        BPlusTree::bPlusPrint(blockEntry.lChild, relId, attrName);
+
+        for (int entry = 0; entry < blockHeader.numEntries; entry++) {
+            internalBlock.getEntry (&blockEntry, entry);
+            BPlusTree::bPlusPrint(blockEntry.rChild, relId, attrName);
+        }
+        return;
+    } 
+
+    return;
+}

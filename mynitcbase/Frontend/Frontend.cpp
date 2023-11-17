@@ -145,8 +145,45 @@ int Frontend::select_attrlist_from_join_where(char relname_source_one[ATTR_SIZE]
 int Frontend::custom_function(int argc, char argv[][ATTR_SIZE]) {
   // argc gives the size of the argv array
   // argv stores every token delimited by space and comma
+  char relname[ATTR_SIZE];
+  strcpy(relname, argv[0]);
+  
+  int relId = OpenRelTable::getRelId(relname);
+  if(relId < 0 || relId >= MAX_OPEN)
+    return E_RELNOTOPEN;
 
+  RelCatEntry RelCatEntry;
+    RelCacheTable::getRelCatEntry(relId, &RelCatEntry);
+
+    int blockNum = RelCatEntry.firstBlk;
+
+    while(blockNum != -1){
+        
+        RecBuffer currBlock(blockNum);
+
+        HeadInfo header;
+        currBlock.getHeader(&header);
+
+        std::cout<<"Block Number: "<< blockNum <<" Record Block\n";
+
+        blockNum = header.rblock;
+    }
+
+    std::cout<<"Record Blocks Printed!\n";
+
+	int numAttrs = RelCatEntry.numAttrs;
+
+	AttrCatEntry attrCatEntry;
+
+	for(int i = 0; i < RelCatEntry.numAttrs; i++){
+
+		AttrCacheTable::getAttrCatEntry(relId, i, &attrCatEntry);
+		if(attrCatEntry.rootBlock != -1)
+			BPlusTree::bPlusPrint(attrCatEntry.rootBlock, relId, attrCatEntry.attrName);	
+
+	}
+
+	std::cout<<"Index Blocks Printed!\n";
   // implement whatever you desire
-
   return SUCCESS;
 }

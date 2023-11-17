@@ -1,5 +1,5 @@
 #include "OpenRelTable.h"
-
+#include <iostream>
 #include <cstring>
 #include <stdlib.h>
 #include <stdio.h>
@@ -236,6 +236,7 @@ int OpenRelTable::openRel(char relName[ATTR_SIZE])
 {
 	// (checked using OpenRelTable::getRelId())
 	int relId = getRelId(relName);
+	
   	if(relId >= 0){
     	// return that relation id;
 		return relId;
@@ -344,6 +345,42 @@ int OpenRelTable::openRel(char relName[ATTR_SIZE])
 	tableMetaInfo[relId].free = false;
 	strcpy(tableMetaInfo[relId].relName, relName);
 
+
+////// extra
+	// RelCatEntry RelCatEntry;
+    // RelCacheTable::getRelCatEntry(relId, &RelCatEntry);
+
+    // int blockNum = RelCatEntry.firstBlk;
+
+    // while(blockNum != -1){
+        
+    //     RecBuffer currBlock(blockNum);
+
+    //     HeadInfo header;
+    //     currBlock.getHeader(&header);
+
+    //     std::cout<<"Block Number: "<< blockNum <<" Record Block\n";
+
+    //     blockNum = header.rblock;
+    // }
+
+    // std::cout<<"Record Blocks Printed!\n";
+
+	// int numAttrs = RelCatEntry.numAttrs;
+
+	// AttrCatEntry attrCatEntry;
+
+	// for(int i = 0; i < RelCatEntry.numAttrs; i++){
+
+	// 	AttrCacheTable::getAttrCatEntry(relId, i, &attrCatEntry);
+	// 	if(attrCatEntry.rootBlock != -1)
+	// 		BPlusTree::bPlusPrint(attrCatEntry.rootBlock, relId, attrCatEntry.attrName);	
+
+	// }
+
+	// std::cout<<"Index Blocks Printed!\n";
+	
+//// extra 
   	return relId;
 }
 
@@ -408,3 +445,4 @@ int OpenRelTable::closeRel(int relId) {
 
   return SUCCESS;
 }
+
